@@ -1,0 +1,176 @@
+- hosts: all
+  tasks:
+  # Firewalld
+  - name: firewalld settings
+    block:
+      - name: enable and start firewalld
+        service:
+          name: firewalld
+          state: started
+          enabled: yes
+      - name: firewall 22/tcp
+        firewalld:
+          port: 22/tcp
+          zone: public
+          permanent: yes
+          immediate: yes
+          state: enabled
+      - name: firewall 80/tcp
+        firewalld:
+          port: 80/tcp
+          zone: public
+          permanent: yes
+          immediate: yes
+          state: enabled
+      - name: firewall 443/tcp
+        firewalld:
+          port: 443/tcp
+          zone: public
+          permanent: yes
+          immediate: yes
+          state: enabled
+    become: yes
+
+  - name: install epel-release
+    yum:
+      name: epel-release
+      state: present
+    become: yes
+
+  # wireshark
+  - name: wireshark
+    block:
+      - name: insatll wireshark
+        yum:
+          name: "{{ packages }}"
+          state: present
+        vars:
+          packages:
+            - wireshark
+            - wireshark-gnome
+      - name: group wireshark
+        group:
+          name: wireshark
+          state: present
+      - name: set group to dumpcap
+        file:
+          path: /usr/sbin/dumpcap
+          group: wireshark
+      - name: setcap CAP_NET_RAW to dumpcap
+        capabilities:
+          path: /usr/sbin/dumpcap
+          capability: CAP_NET_RAW+eip
+      - name: setcap CAP_NET_ADMIN to dumpcap
+        capabilities:
+          path: /usr/sbin/dumpcap
+          capability: CAP_NET_ADMIN+eip
+      - name: user `user` join to `wireshark` group
+        user:
+          name: user
+          groups: wireshark
+          append: yes
+    become: yes
+
+  # PostgreSQL
+  - name: PostgreSQL
+    block:
+      - name: install PostgreSQL
+        yum:
+          name: postgresql-server
+          state: present
+      - name: initdb
+        shell:
+          cmd: |
+            set -xe
+            postgresql-setup initdb
+            touch /root/.postgresql-setup-initdb
+        args:
+          creates: /var/lib/pgsql/data/pg_hba.conf
+      - name: service postgresql
+        service:
+          name: postgresql
+          state: started
+          enabled: yes
+    become: yes
+
+  # Python
+  - name: Download SQLite
+    unarchive:
+      src: https://www.sqlite.org/2019/sqlite-autoconf-3280000.tar.gz
+      dest: /home/user/
+      remote_src: yes
+  - name: install gcc
+    yum:
+      name: gcc
+      state: present
+    become: yes
+  - name: build sqlite
+    shell:
+      cmd: |
+        set -ex
+        ./configure --prefix=/usr/local
+        make
+    args:
+      chdir: /home/user/sqlite-autoconf-3280000
+      creates: /home/user/sqlite-autoconf-3280000/sqlite3
+    register: make_sqlite
+  - name: install sqlite
+    make:
+      chdir: /home/user/sqlite-autoconf-3280000
+      target: install
+    when: make_sqlite.rc == 0
+    become: yes
+  - name: bashrc
+    lineinfile:
+      path: /home/user/.bash_profile
+      line: 'export LD_LIBRARY_PATH="/usr/local/lib"'
+  - name: insatll wireshark
+    yum:
+      name: "{{ packages }}"
+      state: present
+    vars:
+      packages:
+        - zlib-devel
+        - bzip2
+        - bzip2-devel
+        - readline
+        - readline-devel
+        - openssl
+        - openssl-devel
+        - git
+        - libffi-devel
+        - gcc
+    become: yes
+  - name: clone pyenv
+    git:
+      repo: https://github.com/pyenv/pyenv.git
+      dest: /home/user/.pyenv
+      update: yes
+  - name: enable pyenv
+    blockinfile:
+      path: /home/user/.bash_profile
+      block: |
+        export PATH="$HOME/.pyenv/bin:$PATH"
+        eval "$(pyenv init -)"
+  - name: install python
+    shell:
+      cmd: |
+        set -ex
+        source ~/.bash_profile
+        pyenv install 3.7.3
+        pyenv rehash
+        pyenv global 3.7.3
+    args:
+      creates: /home/user/.pyenv/versions/3.7.3
+  - name: firewall 3000/tcp
+    firewalld:
+      port: 3000/tcp
+      zone: public
+      permanent: yes
+      immediate: yes
+      state: enabled
+    become: yes
+  - name: install django
+    pip:
+      name: django==2.2.12
+      executable: /home/user/.pyenv/versions/3.7.3/bin/pip
