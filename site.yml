@@ -113,12 +113,15 @@
     args:
       chdir: /home/user/sqlite-autoconf-3280000
       creates: /home/user/sqlite-autoconf-3280000/sqlite3
-    register: make_sqlite
   - name: install sqlite
-    make:
+    # `make` module always reports `changed`.
+    shell:
+      cmd: |
+        set -ex
+        make install
+    args:
       chdir: /home/user/sqlite-autoconf-3280000
-      target: install
-    when: make_sqlite.rc == 0
+      creates: /usr/local/lib/libsqlite3.so
     become: yes
   - name: bashrc
     lineinfile:
